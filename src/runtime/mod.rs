@@ -560,14 +560,23 @@ fn html_to_markdown(s: &str) -> String {
         .replace("</ol>", "")
         .replace("<ul>", "")
         .replace("</ul>", "");
+    let chars: Vec<char> = s.chars().collect();
     let mut out = String::with_capacity(s.len());
-    let mut in_tag = false;
-    for ch in s.chars() {
-        match ch {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            c if !in_tag => out.push(c),
-            _ => {}
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '<'
+            && chars.get(i + 1).map_or(false, |c| c.is_ascii_alphabetic() || *c == '/')
+        {
+            // Real tag: consume through the closing '>' (or end of string).
+            while i < chars.len() && chars[i] != '>' {
+                i += 1;
+            }
+            if i < chars.len() {
+                i += 1; // skip '>'
+            }
+        } else {
+            out.push(chars[i]);
+            i += 1;
         }
     }
     out.trim().to_string()
@@ -925,6 +934,37 @@ mod index_equivalence_tests {
             text.len(),
             old[3],
             new[3]
+        );
+    }
+}
+
+#[cfg(test)]
+mod html_to_markdown_tests {
+    use super::html_to_markdown;
+
+    #[test]
+    fn keeps_comparison_operators() {
+        // A bare `<` followed by a non-tag char must be preserved, not treated
+        // as the start of an unterminated tag that swallows the rest.
+        assert_eq!(
+            html_to_markdown("use the radius if the parameter is <= 0, else calc1"),
+            "use the radius if the parameter is <= 0, else calc1"
+        );
+        assert_eq!(html_to_markdown("when x > y do stuff"), "when x > y do stuff");
+        assert_eq!(html_to_markdown("range 3 < n < 9"), "range 3 < n < 9");
+    }
+
+    #[test]
+    fn strips_real_tags() {
+        assert_eq!(html_to_markdown("a <b>bold</b> word"), "a bold word");
+        assert_eq!(html_to_markdown("<span>x</span> <= 0"), "x <= 0");
+    }
+
+    #[test]
+    fn converts_list_items() {
+        assert_eq!(
+            html_to_markdown("<ul><li>first</li><li>second</li></ul>"),
+            "- first\n- second"
         );
     }
 }
